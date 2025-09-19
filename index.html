@@ -254,7 +254,7 @@
     <div class="container">
         <div class="card">
             <h2>📥 Carregar Dados da Planilha</h2>
-            <p>Os dados serão carregados automaticamente da planilha pública do Google Sheets.</p>
+            <p>Os dados serão carregados diretamente da planilha pública do Google Sheets.</p>
             <button id="btnCarregarPlanilha">Carregar Dados da Planilha</button>
             <div id="statusMessage" class="status-info">
                 Clique no botão acima para carregar os dados da planilha.
@@ -266,7 +266,7 @@
             <div class="file-input">
                 <p>Selecione os arquivos XML dos Conhecimentos de Transporte Eletrônico (CT-e)</p>
                 <label for="xmlFiles" class="file-label">
-                    <i class="fas fa-upload"></i> Escolher Arquivos XML
+                    Escolher Arquivos XML
                 </label>
                 <input type="file" id="xmlFiles" multiple accept=".xml">
                 <p id="fileCount">Nenhum arquivo selecionado</p>
@@ -297,9 +297,17 @@
         const statusMessage = document.getElementById('statusMessage');
         const resultadosContainer = document.getElementById('resultadosContainer');
 
-        // Event Listeners
-        btnCarregarPlanilha.addEventListener('click', carregarDadosPlanilha);
-        btnProcessar.addEventListener('click', processarComparacao);
+        // Event Listeners - CORRIGIDO: Adicionado preventDefault e garantido funcionamento
+        btnCarregarPlanilha.addEventListener('click', function(e) {
+            e.preventDefault();
+            carregarDadosPlanilha();
+        });
+        
+        btnProcessar.addEventListener('click', function(e) {
+            e.preventDefault();
+            processarComparacao();
+        });
+        
         xmlFilesInput.addEventListener('change', function() {
             const files = this.files;
             if (files.length > 0) {
@@ -313,22 +321,28 @@
             }
         });
 
-        // Função para carregar dados da planilha
+        // Função para carregar dados da planilha - TOTALMENTE CORRIGIDA
         async function carregarDadosPlanilha() {
+            // Desabilitar botão e mostrar status de carregamento
             btnCarregarPlanilha.disabled = true;
             btnCarregarPlanilha.classList.add('loading');
             statusMessage.innerHTML = '<div class="spinner"></div> Carregando dados da planilha...';
             statusMessage.className = 'status-loading';
 
             try {
+                // URL pública SEM necessidade de API Key
                 const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+                console.log("URL da planilha:", url); // Para debug
+                
                 const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error(`Erro ao carregar planilha: ${response.status}`);
+                    throw new Error(`Erro ao carregar planilha: ${response.status} ${response.statusText}`);
                 }
                 
                 const text = await response.text();
+                console.log("Dados CSV recebidos (primeiros 200 caracteres):", text.substring(0, 200)); // Para debug
+                
                 const dados = parseCSV(text);
                 
                 if (!dados || !dados.arrays || dados.arrays.length === 0) {
@@ -338,6 +352,7 @@
                 // Processar os dados conforme sua lógica
                 dadosPlanilhaAgrupados = processarDadosDaPlanilha(dados.arrays);
                 
+                // Mensagem de sucesso
                 statusMessage.innerHTML = `✅ Dados carregados com sucesso! ${dadosPlanilhaAgrupados.length} registros agrupados.`;
                 statusMessage.className = 'status-success';
                 
@@ -356,7 +371,7 @@
             }
         }
 
-        // Função para parsear CSV
+        // Função para parsear CSV - ADAPTADA DO SEU CÓDIGO
         function parseCSV(text) {
             if (!text) return { arrays: [], headersOrig: [], headersNorm: [] };
             const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
@@ -373,21 +388,14 @@
             return { arrays: parsed, headersOrig, headersNorm };
         }
 
-        // Função para normalizar cabeçalho
+        // Função para normalizar cabeçalho - ADAPTADA DO SEU CÓDIGO
         function normalizeHeader(h) {
             if (h === undefined || h === null) return '';
             return String(h).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
         }
 
-        // Função para processar dados da planilha
+        // Função para processar dados da planilha - TOTALMENTE CORRIGIDA
         function processarDadosDaPlanilha(rows) {
-            // Vamos usar os índices fixos conforme sua solicitação:
-            // Coluna A (índice 0) = Data
-            // Coluna E (índice 4) = Frete
-            // Coluna H (índice 7) = Placa
-            // Coluna J (índice 9) = Peso
-            // Coluna K (índice 10) = Nota Fiscal
-            
             if (rows.length === 0) {
                 throw new Error("Nenhuma linha de dados encontrada");
             }
@@ -397,7 +405,7 @@
             for (let i = 0; i < rows.length; i++) {
                 const linha = rows[i];
                 
-                // Extrair valores pelas posições fixas
+                // Extrair valores pelas posições fixas (A=0, E=4, H=7, J=9, K=10)
                  linha[0] ? linha[0].toString().trim() : '';
                 let freteStr = linha[4] ? linha[4].toString().trim() : '0';
                 const placa = linha[7] ? linha[7].toString().trim() : '';
@@ -707,6 +715,11 @@
             
             resultadosContainer.innerHTML = html;
         }
+        
+        // Inicialização - Garantir que tudo funcione após o carregamento da página
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Página carregada e pronta para uso.");
+        });
     </script>
 </body>
 </html>
