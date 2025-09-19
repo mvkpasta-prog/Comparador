@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comparador de Frete - Google Sheets x XML CTE</title>
+    <title>Comparador de Frete - Planilha Pública x XML CTE</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -16,12 +16,6 @@
             display: flex;
             gap: 20px;
             margin-top: 20px;
-        }
-        .panel {
-            flex: 1;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
         }
         button {
             background-color: #4CAF50;
@@ -39,6 +33,10 @@
         button:disabled {
             background-color: #cccccc;
             cursor: not-allowed;
+        }
+        button.loading {
+            background-color: #007bff;
+            cursor: wait;
         }
         table {
             width: 100%;
@@ -100,56 +98,37 @@
     </style>
 </head>
 <body>
-    <h1>Comparador de Frete - Google Sheets x XML CTE</h1>
+    <h1>Comparador de Frete - Planilha Pública x XML CTE</h1>
     
     <div class="tabs">
         <div class="tab active" onclick="openTab(event, 'instrucoes')">Instruções</div>
-        <div class="tab" onclick="openTab(event, 'config')">Configuração</div>
-        <div class="tab" onclick="openTab(event, 'carregar')">Carregar XMLs</div>
+        <div class="tab" onclick="openTab(event, 'carregar')">Carregar Dados</div>
         <div class="tab" onclick="openTab(event, 'resultados')">Resultados</div>
     </div>
 
     <div id="instrucoes" class="tab-content active">
         <h2>Como usar:</h2>
         <ol>
-            <li>Na aba "Configuração", insira sua Google API Key (obrigatório)</li>
-            <li>Clique em "Carregar Dados da Planilha"</li>
-            <li>Na aba "Carregar XMLs", selecione os arquivos XML dos CT-e</li>
+            <li>Clique em "Carregar Dados da Planilha" para ler os dados diretamente do Google Sheets</li>
+            <li>Selecione os arquivos XML dos CT-e</li>
             <li>Clique em "Processar Comparação"</li>
             <li>Veja os resultados na aba "Resultados"</li>
         </ol>
         
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3>⚙️ Como obter sua Google API Key:</h3>
-            <ol>
-                <li>Acesse <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
-                <li>Crie um projeto ou selecione um existente</li>
-                <li>Ative a "Google Sheets API"</li>
-                <li>Vá em "Credentials" > "Create Credentials" > "API Key"</li>
-                <li>Copie a chave e cole abaixo</li>
-            </ol>
+            <h3>⚙️ Funcionamento:</h3>
+            <p>Este sistema lê diretamente da planilha pública usando o endpoint <code>gviz/tq?tqx=out:csv</code>, sem necessidade de API Key.</p>
+            <p>Colunas utilizadas: A (Data), E (Frete), H (Placa), J (Peso), K (Nota Fiscal)</p>
         </div>
     </div>
 
-    <div id="config" class="tab-content">
-        <h2>Configuração</h2>
-        <label for="apiKey">Google API Key (obrigatório):</label><br>
-        <input type="text" id="apiKey" size="60" placeholder="Cole sua Google API Key aqui"><br><br>
-        
-        <label for="spreadsheetId">ID da Planilha (default preenchido):</label><br>
-        <input type="text" id="spreadsheetId" size="60" 
-               value="1CZZgYJiZic9pyFFTdyldm_gVwn2K-zSGY9uhFJ5Nz6Q"><br><br>
-        
-        <label for="sheetGid">GID da aba (default preenchido):</label><br>
-        <input type="text" id="sheetGid" size="20" value="1183141602"><br><br>
-        
-        <button onclick="carregarDadosPlanilha()">Carregar Dados da Planilha</button>
-        <div id="statusMessage"></div>
-    </div>
-
     <div id="carregar" class="tab-content">
-        <h2>Carregar XMLs dos CT-e</h2>
-        <div class="file-input-container">
+        <h2>Carregar Dados</h2>
+        
+        <button onclick="carregarDadosPlanilha()" id="btnCarregarPlanilha">Carregar Dados da Planilha</button>
+        <div id="statusMessage"></div>
+        
+        <div class="file-input-container" style="margin-top: 20px;">
             <label for="xmlFiles">Selecione os arquivos XML:</label><br>
             <input type="file" id="xmlFiles" multiple accept=".xml">
         </div>
@@ -167,6 +146,8 @@
 
     <script>
         let dadosPlanilhaAgrupados = null;
+        const SHEET_ID = '1CZZgYJiZic9pyFFTdyldm_gVwn2K-zSGY9uhFJ5Nz6Q';
+        const GID = '1183141602'; // GID da aba PROGRAMAÇÃO
         
         function openTab(evt, tabName) {
             var i, tabcontent, tablinks;
@@ -183,7 +164,6 @@
         }
 
         function limparTudo() {
-            document.getElementById('apiKey').value = '';
             document.getElementById('xmlFiles').value = '';
             dadosPlanilhaAgrupados = null;
             document.getElementById('btnProcessar').disabled = true;
@@ -192,73 +172,42 @@
         }
         
         async function carregarDadosPlanilha() {
-            const apiKey = document.getElementById('apiKey').value.trim();
-            const spreadsheetId = document.getElementById('spreadsheetId').value.trim();
-            const sheetGid = document.getElementById('sheetGid').value.trim();
-            
-            if (!apiKey) {
-                mostrarStatus("Chave API é obrigatória!", "error");
-                return;
-            }
-            
-            if (!spreadsheetId) {
-                mostrarStatus("ID da planilha é obrigatório!", "error");
-                return;
-            }
-            
+            const btn = document.getElementById('btnCarregarPlanilha');
+            btn.classList.add('loading');
+            btn.disabled = true;
             mostrarStatus("Carregando dados da planilha...", "loading");
             
             try {
-                // Montar o range: vamos buscar da linha 2 em diante, assumindo que linha 1 é cabeçalho
-                // Colunas: A, E, H, J, K → "A:E,H:K" mas como são colunas não contíguas, melhor buscar tudo e filtrar
-                // Vamos buscar da coluna A até K
-                const range = `gid=${sheetGid}`; // Não é usado diretamente, vamos usar o nome da aba se possível
-                
-                // Primeiro, obter metadados para descobrir o nome da aba
-                const urlMetadata = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}`;
-                const responseMetadata = await fetch(urlMetadata);
-                const dataMetadata = await responseMetadata.json();
-                
-                if (!responseMetadata.ok) {
-                    throw new Error(dataMetadata.error?.message || 'Erro ao carregar metadados da planilha');
-                }
-                
-                // Encontrar a aba com o gid especificado
-                const sheet = dataMetadata.sheets.find(s => s.properties.sheetId == sheetGid);
-                if (!sheet) {
-                    throw new Error(`Aba com gid ${sheetGid} não encontrada`);
-                }
-                const sheetName = sheet.properties.title;
-                
-                // Agora buscar os dados
-                const rangeWithData = `'${encodeURIComponent(sheetName)}'!A:K`;
-                const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${rangeWithData}?key=${apiKey}`;
-                
+                // URL para ler a planilha como CSV usando gviz (sem API Key)
+                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
                 const response = await fetch(url);
-                const data = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(data.error?.message || 'Erro ao carregar dados da planilha');
+                    throw new Error(`Erro ao carregar planilha: ${response.status}`);
                 }
                 
-                if (!data.values || data.values.length < 2) {
+                const text = await response.text();
+                const dados = parseCSV(text);
+                
+                if (!dados || !dados.arrays || dados.arrays.length === 0) {
                     throw new Error('Nenhum dado encontrado na planilha');
                 }
                 
                 // Processar os dados
-                dadosPlanilhaAgrupados = processarDadosDaPlanilha(data.values);
+                dadosPlanilhaAgrupados = processarDadosDaPlanilha(dados.arrays, dados.headersOrig, dados.headersNorm);
                 
                 // Habilitar botão de processar
                 document.getElementById('btnProcessar').disabled = false;
                 
                 mostrarStatus(`Dados carregados com sucesso! ${dadosPlanilhaAgrupados.length} registros agrupados.`, "success");
-                
-                // Mudar para aba de carregar XMLs
-                openTab({currentTarget: document.querySelector('.tab:nth-child(3)')}, 'carregar');
+                btn.classList.remove('loading');
+                btn.disabled = false;
                 
             } catch (error) {
                 console.error("Erro:", error);
                 mostrarStatus(`Erro: ${error.message}`, "error");
+                btn.classList.remove('loading');
+                btn.disabled = false;
             }
         }
         
@@ -268,45 +217,52 @@
             statusDiv.className = tipo;
         }
         
-        function processarDadosDaPlanilha(valores) {
-            // Valores é um array de arrays, onde cada subarray é uma linha
-            const cabecalho = valores[0];
+        /* Função para parsear CSV (adaptada do seu código) */
+        function parseCSV(text) {
+            if (!text) return { arrays: [], headersOrig: [], headersNorm: [] };
+            const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+            if (lines.length === 0) return { arrays: [], headersOrig: [], headersNorm: [] };
             
-            // Mapear índices das colunas que precisamos
-            const indices = {
-                 -1,
-                frete: -1,
-                placa: -1,
-                peso: -1,
-                nf: -1
-            };
+            // Processar cada linha, tratando campos entre aspas
+            const parsed = lines.map(line => 
+                line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim())
+            );
             
-            cabecalho.forEach((col, index) => {
-                if (index === 0) indices.data = 0; // Coluna A
-                if (index === 4) indices.frete = 4; // Coluna E
-                if (index === 7) indices.placa = 7; // Coluna H
-                if (index === 9) indices.peso = 9; // Coluna J
-                if (index === 10) indices.nf = 10; // Coluna K
-            });
+            const headersOrig = parsed.shift().map(h => h || '');
+            const headersNorm = headersOrig.map(h => normalizeHeader(h));
             
-            // Verificar se todas as colunas necessárias estão presentes
-            if (indices.data === -1 || indices.frete === -1 || indices.placa === -1 || 
-                indices.peso === -1 || indices.nf === -1) {
-                throw new Error("Colunas necessárias não encontradas. Verifique se a planilha tem as colunas A, E, H, J, K.");
+            return { arrays: parsed, headersOrig, headersNorm };
+        }
+        
+        /* Normaliza cabeçalho (adaptado do seu código) */
+        function normalizeHeader(h) {
+            if (h === undefined || h === null) return '';
+            return String(h).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+        }
+        
+        function processarDadosDaPlanilha(rows, headersOrig, headersNorm) {
+            // Vamos usar os índices fixos conforme sua solicitação:
+            // Coluna A (índice 0) = Data
+            // Coluna E (índice 4) = Frete
+            // Coluna H (índice 7) = Placa
+            // Coluna J (índice 9) = Peso
+            // Coluna K (índice 10) = Nota Fiscal
+            
+            if (rows.length === 0) {
+                throw new Error("Nenhuma linha de dados encontrada");
             }
             
-            // Processar linhas (a partir da linha 2, índice 1)
+            // Processar linhas
             const dadosProcessados = [];
-            for (let i = 1; i < valores.length; i++) {
-                const linha = valores[i];
-                if (!linha || linha.length === 0) continue;
+            for (let i = 0; i < rows.length; i++) {
+                const linha = rows[i];
                 
-                // Extrair valores
-                const data = linha[indices.data] ? linha[indices.data].toString().trim() : '';
-                let freteStr = linha[indices.frete] ? linha[indices.frete].toString().trim() : '0';
-                const placa = linha[indices.placa] ? linha[indices.placa].toString().trim() : '';
-                let pesoStr = linha[indices.peso] ? linha[indices.peso].toString().trim() : '0';
-                let nf = linha[indices.nf] ? linha[indices.nf].toString().trim() : '';
+                // Extrair valores pelas posições fixas
+                 linha[0] ? linha[0].toString().trim() : '';
+                let freteStr = linha[4] ? linha[4].toString().trim() : '0';
+                const placa = linha[7] ? linha[7].toString().trim() : '';
+                let pesoStr = linha[9] ? linha[9].toString().trim() : '0';
+                let nf = linha[10] ? linha[10].toString().trim() : '';
                 
                 // Processar NF: remover "NF" e manter só números
                 nf = nf.replace(/[^0-9]/g, '');
@@ -323,7 +279,7 @@
                 if (!data || !placa || !nf) continue;
                 
                 dadosProcessados.push({
-                    data: data,
+                     data,
                     frete: frete,
                     placa: placa,
                     peso: peso,
@@ -337,7 +293,7 @@
                 const chave = `${item.data}|${item.placa}|${item.nf}`;
                 if (!agrupados[chave]) {
                     agrupados[chave] = {
-                        data: item.data,
+                         item.data,
                         placa: item.placa,
                         nf: item.nf,
                         pesoTotal: 0,
@@ -586,7 +542,7 @@
             document.getElementById('resultadosContainer').innerHTML = html;
             
             // Mudar para a aba de resultados
-            document.querySelector('.tab:nth-child(4)').click();
+            document.querySelector('.tab:nth-child(3)').click();
         }
     </script>
 </body>
